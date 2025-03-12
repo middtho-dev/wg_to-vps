@@ -12,16 +12,22 @@ else
     echo "WireGuard уже установлен."
 fi
 
+# Проверка наличия wg-quick
+if ! command -v wg-quick > /dev/null; then
+    echo "wg-quick отсутствует. Устанавливаем..."
+    opkg install wireguard-tools
+fi
+
 echo "=== Настройка конфигурации WireGuard ==="
 mkdir -p /etc/wireguard
 
-# Проверяем, есть ли конфигурационный файл vps.conf в текущей папке
+# Проверяем, есть ли конфигурационный файл vps.conf
 if [ ! -f "vps.conf" ]; then
     echo "Ошибка: Файл vps.conf не найден!"
     exit 1
 fi
 
-# Копируем конфигурацию в нужное место
+# Копируем конфигурацию
 cp vps.conf $WG_CONF_PATH
 chmod 600 $WG_CONF_PATH
 
@@ -34,15 +40,24 @@ uci set network.$WG_INTERFACE=interface
 uci set network.$WG_INTERFACE.proto='wireguard'
 uci commit network
 
-# Добавляем WireGuard в автозапуск
+# Добавляем в автозапуск
 if ! grep -q "wg-quick up $WG_INTERFACE" /etc/rc.local; then
     sed -i "/exit 0/i wg-quick up $WG_INTERFACE" /etc/rc.local
 fi
 
 echo "=== Проверка соединения ==="
 sleep 5  # Даем немного времени на установление соединения
-WG_PEER_IP=$(grep -oP '(?<=AllowedIPs = )[^/]+' $WG_CONF_PATH)
-ping -c 4 $WG_PEER_IP
+
+# Ищем IP-адрес сервера в конфиге (без `-P`, так как busybox не поддерживает)
+WG_PEER_IP=$(grep 'AllowedIPs' $WG_CONF_PATH | cut -d ' ' -f 3 | cut -d '/' -f 1)
+
+if [ -z "$WG_PEER_IP" ]; then
+    echo "Ошибка: Не удалось определить IP сервера из конфига!"
+    exit 1
+fi
+
+# Проверяем пинг
+ping -c 4 "$WG_PEER_IP" > /dev/null 2>&1
 
 if [ $? -eq 0 ]; then
     echo "VPN соединение успешно установлено!"
@@ -52,7 +67,6 @@ else
 fi
 
 echo "=== Настройка маршрутизации ==="
-# Разрешаем доступ в локальную сеть (например, 192.168.1.0/24)
 uci add_list network.$WG_INTERFACE.allowed_ips='192.168.1.0/24'
 uci commit network
 /etc/init.d/network restart
