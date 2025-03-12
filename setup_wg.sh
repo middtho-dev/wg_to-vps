@@ -1,22 +1,17 @@
 #!/bin/sh
 
-# Установим WireGuard, если его нет
-echo -e "\033[32mПроверка наличия WireGuard...\033[0m"
+# Убедимся, что установлены все нужные пакеты
+echo -e "\033[32mПроверка наличия необходимых пакетов...\033[0m"
 opkg update
 opkg list-installed | grep wireguard
 if [ $? -ne 0 ]; then
-    echo -e "\033[32mWireGuard не найден, устанавливаем...\033[0m"
-    opkg install wireguard
-    opkg install luci-app-wireguard
+    echo -e "\033[32mWireGuard не найден, устанавливаем необходимые пакеты...\033[0m"
+    opkg install kmod-wireguard wireguard-tools
 else
     echo -e "\033[32mWireGuard уже установлен.\033[0m"
 fi
 
-# Установим необходимые пакеты для настройки
-echo -e "\033[32mУстанавливаем пакеты для конфигурации...\033[0m"
-opkg install kmod-wireguard wireguard-tools
-
-# Директория для конфигурации
+# Директория для конфигурации WireGuard
 WG_CONFIG_DIR="/etc/wireguard"
 mkdir -p $WG_CONFIG_DIR
 
@@ -41,7 +36,7 @@ EOF
 
 echo -e "\033[32mКонфигурация успешно записана.\033[0m"
 
-# Создание конфигурации интерфейса WireGuard
+# Конфигурация интерфейса WireGuard
 echo -e "\033[32mСоздание конфигурации интерфейса WireGuard...\033[0m"
 cat <<EOF > /etc/config/network
 config interface 'wg0'
@@ -62,9 +57,8 @@ EOF
 
 echo -e "\033[32mКонфигурация интерфейса создана.\033[0m"
 
-# Убедимся, что все маршруты в сети настроены корректно
-# Удаляем старые маршруты, которые могут мешать
-echo -e "\033[32mУдаляем возможные неправильные маршруты...\033[0m"
+# Очищаем старые маршруты, чтобы избежать конфликтов
+echo -e "\033[32mУдаляем старые маршруты...\033[0m"
 ip route flush table main
 
 # Запуск интерфейса WireGuard
@@ -84,7 +78,8 @@ fi
 
 # Настройка маршрутов для доступа к роутеру и сети LAN
 echo -e "\033[32mНастройка маршрутов...\033[0m"
-# Настроим маршруты для доступа к сети LAN (192.168.1.0/24) и трафика через WireGuard
+
+# Необходимо добавить маршрут для доступа к локальной сети и маршрутизатору
 ip route add 192.168.1.0/24 dev eth0
 ip route add 10.0.0.0/32 dev wg0
 ip route add default via 192.168.1.1
