@@ -1,22 +1,41 @@
-#!/bin/bash
+#!/bin/sh
 
-# Устанавливаем WireGuard
-echo -e "\033[32m[INFO] Устанавливаю WireGuard...\033[0m"
+# Функция для вывода зеленого текста
+print_green() {
+    echo -e "\033[0;32m$1\033[0m"
+}
+
+# Печать стартового сообщения
+print_green "Начинаю установку и настройку WireGuard..."
+
+# Обновление списка пакетов
+print_green "Обновляю список пакетов..."
 opkg update
-opkg install wireguard
+
+# Установка пакетов WireGuard, если они ещё не установлены
+print_green "Устанавливаю необходимые пакеты..."
+opkg install kmod-wireguard wireguard-tools
 
 # Проверка установки WireGuard
-if ! command -v wg &> /dev/null
-then
-    echo -e "\033[31m[ERROR] WireGuard не установлен. Завершаю выполнение скрипта.\033[0m"
+if [ $? -ne 0 ]; then
+    print_green "Ошибка установки WireGuard!"
     exit 1
 fi
 
-# Создаем конфигурацию для интерфейса
-WG_CONF_PATH="/etc/config/wireguard"
-echo -e "\033[32m[INFO] Создаю конфигурацию для интерфейса...\033[0m"
+# Создание нового интерфейса WireGuard
+print_green "Создаю новый интерфейс WireGuard..."
 
-cat <<EOL > $WG_CONF_PATH
+cat <<EOF > /etc/config/network
+# Настройки LAN интерфейса (оставляем как есть, если уже настроено)
+config interface 'lan'
+    option type 'bridge'
+    option ifname 'eth0'
+    option proto 'static'
+    option ipaddr '192.168.1.1'
+    option netmask '255.255.255.0'
+    option gateway '192.168.1.1'
+
+# Новый интерфейс WireGuard
 config interface 'wg0'
     option proto 'wireguard'
     option private_key 'wKb8VjRNAcoECcFVlE89ZGh1YXgJ1FzPEB9Fz+QjGGI='
@@ -24,6 +43,7 @@ config interface 'wg0'
     option dns '1.1.1.1 1.0.0.1'
     option mtu '1420'
 
+# Настройки Peer для подключения к серверу WireGuard
 config wireguard_wg0
     option public_key 'uT3Lie41LK5MNVrWDM4NkR8vX7q4ZEnJuHRdQ1fZgVw='
     option allowed_ips '0.0.0.0/0, ::/0'
@@ -31,24 +51,22 @@ config wireguard_wg0
     option endpoint_port '27988'
     option preshared_key 'vTdc1+h1IDUoP++dTDo+7BaL4HwlMLzgbnfK6rCdT9A='
     option persistent_keepalive '25'
-EOL
+EOF
 
-# Перезагружаем сетевые интерфейсы
-echo -e "\033[32m[INFO] Перезагружаю сетевые интерфейсы...\033[0m"
+# Перезапуск сети для применения изменений
+print_green "Перезапускаю сеть..."
 /etc/init.d/network restart
 
-# Настроим автозапуск WireGuard
-echo -e "\033[32m[INFO] Включаю автозапуск WireGuard...\033[0m"
+# Проверка статуса WireGuard
+print_green "Проверяю статус WireGuard..."
+wg show
+
+# Настройка автозапуска интерфейса WireGuard
+print_green "Настроено на автозапуск WireGuard при старте системы..."
 /etc/init.d/network enable
 
-# Проверка статуса подключения WireGuard
-echo -e "\033[32m[INFO] Проверяю статус соединения...\033[0m"
-wg show wg0
+# Конечное сообщение
+print_green "WireGuard настроен и подключение будет автоматически восстанавливаться!"
 
-# Логирование успешной установки
-echo -e "\033[32m[INFO] WireGuard успешно установлен и настроен.\033[0m"
-echo -e "\033[32m[INFO] Соединение будет постоянно включено.\033[0m"
-
-# Выводим информацию о сетевых интерфейсах
-echo -e "\033[32m[INFO] Просмотр сетевых интерфейсов...\033[0m"
-ip addr show
+# Вывод статуса
+wg show
