@@ -26,15 +26,6 @@ fi
 print_green "Создаю новый интерфейс WireGuard..."
 
 cat <<EOF > /etc/config/network
-# Настройки LAN интерфейса (оставляем как есть, если уже настроено)
-config interface 'lan'
-    option type 'bridge'
-    option ifname 'eth0'
-    option proto 'static'
-    option ipaddr '192.168.1.1'
-    option netmask '255.255.255.0'
-    option gateway '192.168.1.1'
-
 # Новый интерфейс WireGuard
 config interface 'wg0'
     option proto 'wireguard'
