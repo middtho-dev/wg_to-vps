@@ -1,74 +1,107 @@
 #!/bin/sh
 
-WG_CONF_PATH="/etc/wireguard/wg0.conf"
-WG_INTERFACE="wg0"
-
-echo "=== Проверка наличия WireGuard ==="
-if ! command -v wg > /dev/null; then
-    echo "WireGuard не установлен. Устанавливаем..."
-    opkg update
-    opkg install wireguard-tools kmod-wireguard
+# Установим WireGuard, если его нет
+echo -e "\033[32mПроверка наличия WireGuard...\033[0m"
+opkg update
+opkg list-installed | grep wireguard
+if [ $? -ne 0 ]; then
+    echo -e "\033[32mWireGuard не найден, устанавливаем...\033[0m"
+    opkg install wireguard
+    opkg install luci-app-wireguard
 else
-    echo "WireGuard уже установлен."
+    echo -e "\033[32mWireGuard уже установлен.\033[0m"
 fi
 
-# Проверка наличия wg-quick
-if ! command -v wg-quick > /dev/null; then
-    echo "wg-quick отсутствует. Устанавливаем..."
-    opkg install wireguard-tools
-fi
+# Установим необходимые пакеты для настройки
+echo -e "\033[32mУстанавливаем пакеты для конфигурации...\033[0m"
+opkg install kmod-wireguard wireguard-tools
 
-echo "=== Настройка конфигурации WireGuard ==="
-mkdir -p /etc/wireguard
+# Директория для конфигурации
+WG_CONFIG_DIR="/etc/wireguard"
+mkdir -p $WG_CONFIG_DIR
 
-# Проверяем, есть ли конфигурационный файл vps.conf
-if [ ! -f "vps.conf" ]; then
-    echo "Ошибка: Файл vps.conf не найден!"
-    exit 1
-fi
+# Путь к конфигурационному файлу
+WG_CONFIG_FILE="$WG_CONFIG_DIR/vps.conf"
 
-# Копируем конфигурацию
-cp vps.conf $WG_CONF_PATH
-chmod 600 $WG_CONF_PATH
+# Запишем конфигурацию в файл
+echo -e "\033[32mЗапись конфигурации WireGuard в файл $WG_CONFIG_FILE...\033[0m"
+cat <<EOF > $WG_CONFIG_FILE
+[Interface]
+PrivateKey = wKb8VjRNAcoECcFVlE89ZGh1YXgJ1FzPEB9Fz+QjGGI=
+Address = 10.0.0.2/32
+DNS = 1.1.1.1, 1.0.0.1
+MTU = 1420
 
-echo "=== Запуск WireGuard ==="
-wg-quick down $WG_INTERFACE 2>/dev/null
-wg-quick up $WG_INTERFACE
+[Peer]
+PublicKey = uT3Lie41LK5MNVrWDM4NkR8vX7q4ZEnJuHRdQ1fZgVw=
+AllowedIPs = 0.0.0.0/0, ::/0
+Endpoint = owrtrouters.kv9.ru:27988
+PresharedKey = vTdc1+h1IDUoP++dTDo+7BaL4HwlMLzgbnfK6rCdT9A=
+EOF
 
-echo "=== Настройка автозапуска ==="
-uci set network.$WG_INTERFACE=interface
-uci set network.$WG_INTERFACE.proto='wireguard'
-uci commit network
+echo -e "\033[32mКонфигурация успешно записана.\033[0m"
 
-# Добавляем в автозапуск
-if ! grep -q "wg-quick up $WG_INTERFACE" /etc/rc.local; then
-    sed -i "/exit 0/i wg-quick up $WG_INTERFACE" /etc/rc.local
-fi
+# Создание конфигурации интерфейса WireGuard
+echo -e "\033[32mСоздание конфигурации интерфейса WireGuard...\033[0m"
+cat <<EOF > /etc/config/network
+config interface 'wg0'
+    option proto 'wireguard'
+    option private_key 'wKb8VjRNAcoECcFVlE89ZGh1YXgJ1FzPEB9Fz+QjGGI='
+    option listen_port '51820'
+    list addresses '10.0.0.2/32'
 
-echo "=== Проверка соединения ==="
-sleep 5  # Даем немного времени на установление соединения
+config wireguard_wg0
+    option public_key 'uT3Lie41LK5MNVrWDM4NkR8vX7q4ZEnJuHRdQ1fZgVw='
+    option endpoint_host 'owrtrouters.kv9.ru'
+    option endpoint_port '27988'
+    option preshared_key 'vTdc1+h1IDUoP++dTDo+7BaL4HwlMLzgbnfK6rCdT9A='
+    list allowed_ips '0.0.0.0/0'
+    list allowed_ips '::/0'
+    option persistent_keepalive '25'
+EOF
 
-# Ищем IP-адрес сервера в конфиге (без `-P`, так как busybox не поддерживает)
-WG_PEER_IP=$(grep 'AllowedIPs' $WG_CONF_PATH | cut -d ' ' -f 3 | cut -d '/' -f 1)
+echo -e "\033[32mКонфигурация интерфейса создана.\033[0m"
 
-if [ -z "$WG_PEER_IP" ]; then
-    echo "Ошибка: Не удалось определить IP сервера из конфига!"
-    exit 1
-fi
+# Убедимся, что все маршруты в сети настроены корректно
+# Удаляем старые маршруты, которые могут мешать
+echo -e "\033[32mУдаляем возможные неправильные маршруты...\033[0m"
+ip route flush table main
 
-# Проверяем пинг
-ping -c 4 "$WG_PEER_IP" > /dev/null 2>&1
+# Запуск интерфейса WireGuard
+echo -e "\033[32mЗапускаем интерфейс WireGuard...\033[0m"
+ifup wg0
+
+# Убедимся, что соединение установлено
+echo -e "\033[32mПроверка соединения...\033[0m"
+ping -c 4 10.0.0.1
 
 if [ $? -eq 0 ]; then
-    echo "VPN соединение успешно установлено!"
+    echo -e "\033[32mПодключение успешно установлено!\033[0m"
 else
-    echo "Ошибка: Нет ответа от сервера VPN!"
+    echo -e "\033[31mОшибка подключения.\033[0m"
     exit 1
 fi
 
-echo "=== Настройка маршрутизации ==="
-uci add_list network.$WG_INTERFACE.allowed_ips='192.168.1.0/24'
+# Настройка маршрутов для доступа к роутеру и сети LAN
+echo -e "\033[32mНастройка маршрутов...\033[0m"
+# Настроим маршруты для доступа к сети LAN (192.168.1.0/24) и трафика через WireGuard
+ip route add 192.168.1.0/24 dev eth0
+ip route add 10.0.0.0/32 dev wg0
+ip route add default via 192.168.1.1
+
+echo -e "\033[32mМаршруты настроены.\033[0m"
+
+# Убедимся, что интерфейс поднимется после перезагрузки
+echo -e "\033[32mНастройка автозапуска интерфейса...\033[0m"
+uci set network.wg0=interface
+uci set network.wg0.proto='wireguard'
+uci set network.wg0.private_key='wKb8VjRNAcoECcFVlE89ZGh1YXgJ1FzPEB9Fz+QjGGI='
 uci commit network
+
+echo -e "\033[32mАвтозапуск настроен.\033[0m"
+
+# Перезагружаем сеть
+echo -e "\033[32mПерезагрузка сети...\033[0m"
 /etc/init.d/network restart
 
-echo "=== Готово! WireGuard настроен и работает ==="
+echo -e "\033[32mСкрипт выполнен успешно.\033[0m"
