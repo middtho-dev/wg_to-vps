@@ -45,16 +45,16 @@ config wireguard_wg0
 EOF
 
 # Перезапуск сети для применения изменений
-print_green "Перезапускаю сеть..."
-/etc/init.d/network restart
+# print_green "Перезапускаю сеть..."
+# /etc/init.d/network restart
 
 # Проверка статуса WireGuard
 print_green "Проверяю статус WireGuard..."
 wg show
 
 # Настройка автозапуска интерфейса WireGuard
-print_green "Настроено на автозапуск WireGuard при старте системы..."
-/etc/init.d/network enable
+# print_green "Настроено на автозапуск WireGuard при старте системы..."
+# /etc/init.d/network enable
 
 # Конечное сообщение
 print_green "WireGuard настроен и подключение будет автоматически восстанавливаться!"
